@@ -23,17 +23,43 @@ TAU = math.pi * 2
 # 名前: (幅, 高さ)
 SPEC = {
     "hero":  (224, 48),
-    "tiles": (128, 32),
+    "tiles": (128, 48),
     "sky":   (256, 208),
     "far":   (256, 112),
     "mid":   (256, 96),
     "near":  (256, 80),
     "front": (256, 32),
+    # 1-2 酸の湿地
+    "marsh_sky":   (256, 208),
+    "marsh_far":   (256, 112),
+    "marsh_mid":   (256, 96),
+    "marsh_near":  (256, 80),
+    "marsh_front": (256, 32),
+    # 1-3 中継塔（near は縦にもくり返す鉄骨）
+    "tower_sky":   (256, 208),
+    "tower_far":   (256, 112),
+    "tower_mid":   (256, 96),
+    "tower_near":  (256, 96),
+    "tower_front": (256, 32),
+    # 1-4 敵母艦（船内）
+    "ship_sky":   (256, 208),
+    "ship_far":   (256, 112),
+    "ship_mid":   (256, 96),
+    "ship_near":  (256, 80),
+    "ship_front": (256, 32),
+    # ワールド2：2-1 凍てつく氷原 / 2-2 溶岩の地下洞 / 2-3 氷の要塞
+    "ice_sky":   (256, 208), "ice_far":   (256, 112), "ice_mid":   (256, 96),
+    "ice_near":  (256, 80),  "ice_front":  (256, 32),
+    "magma_sky": (256, 208), "magma_far": (256, 112), "magma_mid": (256, 96),
+    "magma_near": (256, 80), "magma_front": (256, 32),
+    "fort_sky":  (256, 208), "fort_far":  (256, 112), "fort_mid":  (256, 96),
+    "fort_near": (256, 80),  "fort_front": (256, 32),
 }
 
 # 内蔵背景の点滅ライト位置（レイヤー内座標, 色）。生成時に埋まる
 MID_LIGHTS = []
 FAR_LIGHTS = []
+LIGHTS = {}          # レイヤー名 -> [(x, y, 色), ...]
 
 
 # ============================================================
@@ -293,7 +319,11 @@ def gen_hero():
 # 地形タイル（8x8）
 #   段0 岩盤 : 内部x4, 上辺, 左辺, 右辺, 下辺（辺はオーバーレイ）
 #   段1 金属 : 内部x4（無地/通気口/警告/窓）, 上辺, 左辺, 右辺, 下辺
-#   段2      : コンテナ, 足場, はしご, ケーブル, 電流床x3
+#   段2      : コンテナ, 足場, はしご, ケーブル, 電流床x3, 酸の表面x3, 酸の中身
+#   段3 泥   : 内部x4, 上辺, 左辺, 右辺, 下辺, キノコの棚（すり抜け床）
+#   段1 の右側（x=64〜87）: ベルトコンベア x3コマ（右向きに流れる絵。左向きは反転して描く）
+#   段0 の右側（x=64〜127）: 氷（すべる床）  内部x4, 上辺, 左辺, 右辺, 下辺
+#   段4 雪   : 内部x4, 上辺, 左辺, 右辺, 下辺（x=0〜63）  溶岩の表面x3, 溶岩の中身（x=64〜95）
 # ============================================================
 def gen_tiles():
     c = Canvas(*SPEC["tiles"])
@@ -407,6 +437,167 @@ def gen_tiles():
             c.line(px, py, ox + xx, ny, 12)
             px, py = ox + xx, ny
         c.pset(ox + 3 + f % 2, 17 - (f == 1), 7)
+    # --- 酸の表面（3コマ） ---
+    for f in range(3):
+        ox = 56 + f * 8
+        c.rect(ox, 16, 8, 8, 3)
+        for x in range(8):
+            wy = 16 + (1 if (x + f * 3) % 6 < 3 else 0)
+            if wy > 16:
+                c.pset(ox + x, 16, KEY)
+            c.pset(ox + x, wy, 11)
+            if (x + f * 2) % 5 == 0:
+                c.pset(ox + x, wy + 1, 7)
+        for y in range(20, 24):
+            for x in range(8):
+                if BAYER[y % 4][x % 4] < (y - 19) * 2:
+                    c.pset(ox + x, y, 1)
+        c.pset(ox + (2 + f * 3) % 8, 19 + f % 2, 11)
+    # --- 酸の中身 ---
+    c.rect(80, 16, 8, 8, 3)
+    for y in range(16, 24):
+        for x in range(8):
+            if BAYER[y % 4][x % 4] < 5:
+                c.pset(80 + x, y, 1)
+    c.pset(82, 18, 11)
+    c.pset(86, 21, 11)
+    # --- 泥 ---
+    for v in range(4):
+        ox = v * 8
+        c.rect(ox, 24, 8, 8, 1)
+        for _ in range(5):
+            c.pset(ox + rnd.randrange(8), 24 + rnd.randrange(8), 5)
+        for _ in range(2):
+            c.pset(ox + rnd.randrange(8), 24 + rnd.randrange(8), 2)
+        if v == 3:   # 光る胞子
+            c.pset(ox + 3, 28, 11)
+            c.pset(ox + 4, 28, 3)
+            c.pset(ox + 3, 27, 3)
+    for x in range(8):
+        c.pset(32 + x, 24, 11 if x % 3 else 3)
+        c.pset(32 + x, 25, 3)
+        if x % 3 == 0:
+            c.pset(32 + x, 26, 3)
+    c.pset(32 + 4, 27, 3)
+    for y in range(8):
+        c.pset(40, 24 + y, 0)
+        if y % 2:
+            c.pset(41, 24 + y, 0)
+        c.pset(55, 24 + y, 0)
+        if y % 2 == 0:
+            c.pset(54, 24 + y, 0)
+    for x in range(8):
+        c.pset(56 + x, 31, 0)
+        if x % 2:
+            c.pset(56 + x, 30, 0)
+    # --- ベルトコンベア（3コマ・右へ流れる） ---
+    for f in range(3):
+        ox = 64 + f * 8
+        c.rect(ox, 8, 8, 8, 1)
+        c.line(ox, 8, ox + 7, 8, 13)
+        c.line(ox, 15, ox + 7, 15, 0)
+        for x in range(8):                       # 流れる矢じるし
+            k = (x - f * 3) % 8
+            if k in (0, 1):
+                c.pset(ox + x, 10 + k, 10)
+                c.pset(ox + x, 13 - k, 10)
+        for x in (1, 6):                          # ローラー
+            c.pset(ox + x, 14, 5 if (x + f) % 2 else 13)
+    # --- 氷（すべる床） ---
+    for v in range(4):
+        ox = 64 + v * 8
+        c.rect(ox, 0, 8, 8, 12)
+        for y in range(8):
+            for x in range(8):
+                if BAYER[y % 4][x % 4] < y * 1.3:
+                    c.pset(ox + x, y, 5)
+        for i in range(3):
+            c.pset(ox + (v * 3 + i) % 8, (1 + i + v) % 8, 6)
+        if v == 1:
+            c.line(ox + 1, 1, ox + 3, 3, 6)
+        elif v == 2:
+            c.pset(ox + 5, 4, 7)
+        elif v == 3:
+            c.line(ox + 2, 0, ox + 4, 4, 1)
+            c.line(ox + 4, 4, ox + 3, 7, 1)
+    for x in range(8):
+        c.pset(96 + x, 0, 7)
+        c.pset(96 + x, 1, 7 if x % 3 else 6)
+        if x % 2 == 0:
+            c.pset(96 + x, 2, 6)
+    for y in range(8):
+        c.pset(104, y, 6)
+        if y % 2:
+            c.pset(105, y, 6)
+        c.pset(119, y, 1)
+        if y % 2 == 0:
+            c.pset(118, y, 5)
+    for x in range(8):
+        c.pset(120 + x, 7, 1)
+        if x % 2:
+            c.pset(120 + x, 6, 5)
+    c.pset(122, 7, 6)
+    c.pset(126, 7, 6)
+    # --- 雪 ---
+    for v in range(4):
+        ox = v * 8
+        c.rect(ox, 32, 8, 8, 6)
+        for _ in range(5):
+            c.pset(ox + rnd.randrange(8), 32 + rnd.randrange(8), 7)
+        for _ in range(3):
+            c.pset(ox + rnd.randrange(8), 32 + rnd.randrange(8), 13)
+        if v == 3:              # 雪に埋まった石
+            c.rect(ox + 2, 35, 3, 2, 13)
+            c.pset(ox + 2, 35, 5)
+    for x in range(8):
+        c.pset(32 + x, 32, 7)
+        c.pset(32 + x, 33, 7 if x % 2 else 6)
+        if x in (2, 6):
+            c.pset(32 + x, 32, 12)
+    for y in range(8):
+        c.pset(40, 32 + y, 13)
+        if y % 2:
+            c.pset(41, 32 + y, 13)
+        c.pset(55, 32 + y, 5)
+        if y % 2 == 0:
+            c.pset(54, 32 + y, 13)
+    for x in range(8):
+        c.pset(56 + x, 39, 5)
+        if x % 2:
+            c.pset(56 + x, 38, 13)
+    # --- 溶岩の表面（3コマ）と中身 ---
+    for f in range(3):
+        ox = 64 + f * 8
+        c.rect(ox, 32, 8, 8, 8)
+        for x in range(8):
+            wy = 32 + (1 if (x + f * 3) % 6 < 3 else 0)
+            if wy > 32:
+                c.pset(ox + x, 32, KEY)
+            c.pset(ox + x, wy, 10)
+            if (x + f * 2) % 4 == 0:
+                c.pset(ox + x, wy + 1, 9)
+        for y in range(36, 40):
+            for x in range(8):
+                if BAYER[y % 4][x % 4] < (y - 35) * 2:
+                    c.pset(ox + x, y, 2)
+        c.pset(ox + (2 + f * 3) % 8, 35 + f % 2, 10)
+    c.rect(88, 32, 8, 8, 8)
+    for y in range(32, 40):
+        for x in range(8):
+            if BAYER[y % 4][x % 4] < 6:
+                c.pset(88 + x, y, 2)
+    c.pset(90, 34, 9)
+    c.pset(93, 37, 9)
+    # --- キノコの棚（すり抜け床） ---
+    for x in range(8):
+        c.pset(64 + x, 24, 11)
+        c.pset(64 + x, 25, 3)
+        if 0 < x < 7:
+            c.pset(64 + x, 26, 3)
+        if 1 < x < 6:
+            c.pset(64 + x, 27, 1)
+    c.pset(66, 28, 3)
+    c.pset(69, 29, 3)
     return c
 
 
@@ -528,6 +719,7 @@ def gen_far():
         c.pset(x0 - 1, y, 6)
         FAR_LIGHTS.append((x0 - 2, y, 6))
     FAR_LIGHTS.append((196, 0, 8))
+    LIGHTS["far"] = FAR_LIGHTS
     return c
 
 
@@ -589,6 +781,7 @@ def gen_mid():
         c.line(tx + 2, top - 12, tx + 2, top, 5)
         c.rect(tx - 3, top - 4, 10, 2, 5)
         MID_LIGHTS.append((tx + 2, top - 13, 8))
+    LIGHTS["mid"] = MID_LIGHTS
     return c
 
 
@@ -662,9 +855,794 @@ def gen_front():
     return c
 
 
+# ============================================================
+# 背景レイヤー：1-2 酸の湿地
+# ============================================================
+def _fill_ellipse_top(c, cx, cy, rx, ry, col, cut=2):
+    """上半分（中心より cut 下まで）を塗った楕円"""
+    for y in range(int(cy - ry), int(cy + cut) + 1):
+        for x in range(int(cx - rx), int(cx + rx) + 1):
+            if ((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2 <= 1:
+                c.pset(x, y, col)
+
+
+def gen_marsh_sky():
+    w, h = SPEC["marsh_sky"]
+    c = Canvas(w, h, 0)
+    c.grad(0, 50, w, 70, 0, 1, 0.0, 1.0)
+    for y in range(120, h):
+        for x in range(w):
+            c.pset(x, y, 1)
+    c.grad(0, 140, w, h - 140, 1, 3, 0.0, 0.75)
+    rnd = random.Random(21)
+    for _ in range(90):
+        x, y = rnd.randrange(w), rnd.randrange(105)
+        if c.get(x, y) in (0, 1):
+            c.pset(x, y, rnd.choice((5, 13, 13, 11)))
+    # 緑の月と光の輪
+    mx, my, mr = 188, 46, 18
+    for y in range(my - mr - 5, my + mr + 6):
+        for x in range(mx - mr - 5, mx + mr + 6):
+            d = math.hypot(x - mx, y - my)
+            if mr < d <= mr + 5 and BAYER[y % 4][x % 4] < (mr + 5 - d) * 1.2:
+                c.pset(x, y, 3 if c.get(x, y) == 1 else 1)
+    for y in range(my - mr, my + mr + 1):
+        for x in range(mx - mr, mx + mr + 1):
+            dx, dy = x - mx, y - my
+            if dx * dx + dy * dy > mr * mr:
+                continue
+            col = 11
+            if BAYER[y % 4][x % 4] < (dx / mr + 0.25) * 12:
+                col = 3
+            c.pset(x, y, col)
+    for cx2, cy2, r2 in ((182, 40, 3), (194, 52, 2), (180, 54, 2), (191, 37, 1)):
+        c.circ(cx2, cy2, r2, 3)
+    c.pset(176, 38, 7)
+    # 地平線のもや
+    for yy in (126, 134, 148, 160):
+        for x in range(w):
+            if (x // 9 + yy) % 5 < 2 and BAYER[yy % 4][x % 4] < 6:
+                c.pset(x, yy, 3)
+    return c
+
+
+def gen_marsh_far():
+    lights = LIGHTS["marsh_far"] = []
+    w, h = SPEC["marsh_far"]
+    c = Canvas(w, h, KEY, wrap=True)
+
+    def hgt(x):
+        return int(26 + 10 * math.sin(TAU * x / w * 3 + 1) + 6 * math.sin(TAU * x / w * 7))
+    for x in range(w):
+        top = h - hgt(x)
+        for y in range(top, h):
+            c.pset(x, y, 1)
+        c.pset(x, top, 3)
+    c.shade(0, h - 40, w, 40, 0, 0.0, 0.7, only=(1,))
+    # 遠くのキノコ
+    for cx, sh, rx in ((100, 52, 20), (232, 40, 14)):
+        c.rect(cx - 2, h - sh, 4, sh, 1)
+        _fill_ellipse_top(c, cx, h - sh, rx, 9, 1)
+        for x in range(cx - rx, cx + rx + 1):
+            c.pset(x, h - sh + 2, 3)
+    # 廃墟の塔
+    for sx, sh in ((60, 70), (150, 86), (200, 58)):
+        top = h - sh
+        c.rect(sx, top, 4, sh, 0)
+        for y in range(top + 6, h, 9):
+            c.line(sx - 2, y, sx + 5, y, 0)
+        c.line(sx + 2, top - 9, sx + 2, top, 0)
+        lights.append((sx + 2, top - 10, 11))
+    return c
+
+
+def gen_marsh_mid():
+    lights = LIGHTS["marsh_mid"] = []
+    w, h = SPEC["marsh_mid"]
+    c = Canvas(w, h, KEY, wrap=True)
+    rnd = random.Random(31)
+    gy = h - 12
+    c.rect(0, gy, w, 12, 1)
+    for x in range(w):
+        if x % 3:
+            c.pset(x, gy, 3)
+    for cx, sh, rx, ry in ((30, 50, 20, 13), (110, 36, 14, 9), (175, 58, 23, 15), (232, 30, 12, 8)):
+        cy = gy - sh
+        for y in range(cy, gy):
+            off = int(3 * math.sin(y * 0.08 + cx))
+            for x in range(cx - 2, cx + 3):
+                c.pset(x + off, y, 0 if x == cx + 2 else 1)
+        _fill_ellipse_top(c, cx, cy, rx, ry, 2)
+        for y in range(cy - ry, cy + 3):
+            for x in range(cx - rx, cx + rx + 1):
+                if c.get(x, y) == 2 and BAYER[y % 4][x % 4] < ((x - cx) / rx) * 10:
+                    c.pset(x, y, 1)
+        for x in range(cx - rx + 1, cx + rx):
+            c.pset(x, cy + 2, 0)
+            if x % 3 == 0:
+                c.pset(x, cy + 3, 0)
+        for _ in range(rx // 4):
+            sx = cx + rnd.randint(-rx + 3, rx - 3)
+            sy = cy - rnd.randint(2, ry - 2)
+            if c.get(sx, sy) == 2:
+                c.pset(sx, sy, 8)
+        for k in (-0.8, 0.0, 0.8):
+            lights.append((int(cx + rx * k), cy + 3, 11))
+    return c
+
+
+def gen_marsh_near():
+    w, h = SPEC["marsh_near"]
+    c = Canvas(w, h, KEY, wrap=True)
+    rnd = random.Random(41)
+    gy = h - 16
+    c.rect(0, gy, w, 16, 0)
+    for x in range(w):
+        if (x // 5) % 3 == 0:
+            c.pset(x, gy, 3)
+        if (x // 7 + 1) % 4 == 0:
+            c.pset(x, gy + 4, 1)
+        if (x // 11) % 3 == 1:
+            c.pset(x, gy + 9, 1)
+
+    def branch(x, y, ang, ln, depth):
+        ex, ey = x + math.cos(ang) * ln, y + math.sin(ang) * ln
+        c.line(x, y, ex, ey, 0)
+        if depth > 0:
+            branch(ex, ey, ang - 0.5 + rnd.uniform(-0.2, 0.2), ln * 0.65, depth - 1)
+            branch(ex, ey, ang + 0.45 + rnd.uniform(-0.2, 0.2), ln * 0.6, depth - 1)
+    for tx, th in ((40, 52), (150, 60), (222, 44)):
+        for k in range(3):
+            c.line(tx + k, gy, tx + 4 + k, gy - th, 0)
+        branch(tx + 5, gy - th, -math.pi / 2 - 0.3, 14, 2)
+        branch(tx + 4, gy - th * 0.6, -0.4, 12, 1)
+    c.rect(80, gy - 10, 50, 6, 1)
+    c.line(80, gy - 10, 129, gy - 10, 5)
+    for x in range(86, 128, 12):
+        c.rect(x, gy - 11, 2, 8, 5)
+    for y in range(gy - 10, gy - 4):
+        c.pset(80 - (y % 2), y, 0)
+    for _ in range(26):
+        x = rnd.randrange(w)
+        ln = rnd.randint(5, 13)
+        c.line(x, gy, x + rnd.randint(-2, 2), gy - ln, 0)
+    return c
+
+
+def gen_marsh_front():
+    w, h = SPEC["marsh_front"]
+    c = Canvas(w, h, KEY, wrap=True)
+    rnd = random.Random(51)
+    for bx in (12, 70, 118, 176, 236):
+        for _ in range(rnd.randint(6, 9)):
+            x = bx + rnd.randint(-7, 7)
+            ln = rnd.randint(12, 28)
+            lean = rnd.randint(-4, 4)
+            col = 0 if rnd.random() < 0.8 else 1
+            c.line(x, h - 1, x + lean, h - 1 - ln, col)
+            if rnd.random() < 0.35:
+                c.rect(x + lean - 1, h - 1 - ln, 2, 5, 4)
+    return c
+
+
+# ============================================================
+# 背景レイヤー：1-3 中継塔
+# ============================================================
+def gen_tower_sky():
+    """高空：宇宙の黒に近い空と、下の方に惑星の地平線"""
+    w, h = SPEC["tower_sky"]
+    c = Canvas(w, h, 0)
+    rnd = random.Random(61)
+    for _ in range(220):
+        x, y = rnd.randrange(w), rnd.randrange(h - 40)
+        c.pset(x, y, rnd.choice((5, 5, 13, 13, 6, 7)))
+    for _ in range(10):                                   # 明るい星
+        x, y = rnd.randrange(w), rnd.randrange(120)
+        c.pset(x, y, 7)
+        c.pset(x - 1, y, 5)
+        c.pset(x + 1, y, 5)
+    # 惑星の地平線（大きな円の上の端）
+    cx, cy, r = 128, 760, 600
+    for y in range(140, h):
+        for x in range(w):
+            d = math.hypot(x - cx, y - cy)
+            if d <= r:
+                col = 1 if BAYER[y % 4][x % 4] < (y - (cy - r)) * 0.5 else 5
+                c.pset(x, y, col)
+            elif d <= r + 2:
+                c.pset(x, y, 12)
+            elif d <= r + 7 and BAYER[y % 4][x % 4] < (r + 7 - d) * 2:
+                c.pset(x, y, 5 if c.get(x, y) == 0 else c.get(x, y))
+    # 遠くの敵母艦
+    x0, yc = 30, 34
+    for x in range(x0, x0 + 46):
+        t = (x - x0) / 46
+        f = math.sin(math.pi * min(1.0, t * 1.2)) ** 0.6
+        for y in range(yc - int(5 * f), yc + int(3 * f) + 1):
+            c.pset(x, y, 1)
+        c.pset(x, yc + int(3 * f), 5)
+    for x in range(x0 + 6, x0 + 40, 4):
+        c.pset(x, yc, 12)
+    return c
+
+
+def gen_tower_far():
+    """はるか下の地上：クレーターと基地の明かり（登るほど沈んでいく）"""
+    lights = LIGHTS["tower_far"] = []
+    w, h = SPEC["tower_far"]
+    c = Canvas(w, h, KEY, wrap=True)
+    rnd = random.Random(71)
+    top = h - 46
+    c.rect(0, top, w, h - top, 1)
+    for x in range(w):
+        c.pset(x, top, 12 if x % 5 else 6)
+    c.shade(0, top, w, h - top, 0, 0.0, 0.8, only=(1,))
+    for _ in range(9):                                    # クレーター（楕円）
+        ex, ey, rx = rnd.randrange(w), rnd.randint(top + 6, h - 8), rnd.randint(6, 16)
+        for y in range(ey - rx // 3, ey + rx // 3 + 1):
+            for x in range(ex - rx, ex + rx + 1):
+                if ((x - ex) / rx) ** 2 + ((y - ey) / (rx / 3)) ** 2 <= 1:
+                    c.pset(x, y, 5 if y < ey else 0)
+    for _ in range(14):                                   # 基地の明かり
+        x, y = rnd.randrange(w), rnd.randint(top + 4, h - 4)
+        c.pset(x, y, 10)
+        lights.append((x, y, 10))
+    for bx in (60, 180):                                  # 遠くのドーム
+        for y in range(top - 6, top + 1):
+            for x in range(bx - 8, bx + 9):
+                if (x - bx) ** 2 + ((y - top) * 1.4) ** 2 <= 64:
+                    c.pset(x, y, 5)
+        lights.append((bx, top - 6, 8))
+    return c
+
+
+def gen_tower_mid():
+    """雲の帯（登っていくと上から下へ通り過ぎる）"""
+    w, h = SPEC["tower_mid"]
+    c = Canvas(w, h, KEY, wrap=True)
+    rnd = random.Random(81)
+    for band_y, thick, col, dens in ((22, 14, 1, 6), (54, 20, 5, 5), (70, 8, 13, 2)):
+        for _ in range(16):
+            cx = rnd.randrange(w)
+            rx = rnd.randint(14, 34)
+            ry = rnd.randint(thick // 3, thick // 2 + 2)
+            cy = band_y + rnd.randint(-3, 3)
+            for y in range(cy - ry, cy + ry + 1):
+                for xx in range(cx - rx, cx + rx + 1):
+                    d = ((xx - cx) / rx) ** 2 + ((y - cy) / ry) ** 2
+                    if d <= 1 and BAYER[y % 4][xx % 4] < (1 - d) * 16 + dens - 4:
+                        c.pset(xx, y, col)
+    return c
+
+
+def gen_tower_near():
+    """中継塔の鉄骨（縦方向にもくり返して描く）"""
+    w, h = SPEC["tower_near"]
+    c = Canvas(w, h, KEY, wrap=True)
+    for gx in (18, 214):                                  # 太い柱2本
+        c.rect(gx, 0, 3, h, 1)
+        c.rect(gx + 21, 0, 3, h, 1)
+        for x in range(gx, gx + 24):
+            c.pset(x, 0, 5)
+            c.pset(x, 1, 1)
+            c.pset(x, h // 2, 1)
+        for y0 in (0, h // 2):                            # X字の筋交い
+            c.line(gx + 2, y0 + 1, gx + 21, y0 + h // 2 - 1, 1)
+            c.line(gx + 21, y0 + 1, gx + 2, y0 + h // 2 - 1, 1)
+        for y in range(0, h, 4):
+            c.pset(gx + 1, y, 5)
+            c.pset(gx + 22, y, 5)
+    for x in range(42, 214):                              # 細い横ばり
+        c.pset(x, 0, 1)
+        if x % 6 == 0:
+            c.pset(x, 1, 1)
+    for x in range(100, 160):                             # 奥の細いケーブル
+        y = 40 + int(10 * math.sin((x - 100) / 60 * math.pi))
+        c.pset(x, y, 1)
+    return c
+
+
+def gen_tower_front():
+    """塔のふもとのがれき（少し登るとすぐ画面外へ）"""
+    w, h = SPEC["tower_front"]
+    c = Canvas(w, h, KEY, wrap=True)
+    rnd = random.Random(91)
+    for cx, r in ((10, 9), (90, 7), (170, 11), (240, 8)):
+        for y in range(h - r, h):
+            for x in range(cx - r - 2, cx + r + 3):
+                if (x - cx) ** 2 + ((y - h) * 1.3) ** 2 < r * r + rnd.randint(-4, 6):
+                    c.pset(x, y, 0)
+    for px in (120, 128):
+        c.rect(px, h - 18, 2, 18, 0)
+    c.line(120, h - 16, 129, h - 12, 0)
+    return c
+
+
+# ============================================================
+# 背景レイヤー：1-4 敵母艦（船内）
+# ============================================================
+def gen_ship_sky():
+    """船内の奥の壁。横長の窓から星空と惑星ゼータが見える"""
+    w, h = SPEC["ship_sky"]
+    c = Canvas(w, h, 1)
+    for y in range(h):                                 # 壁のパネル
+        for x in range(w):
+            if y % 28 == 0 or x % 32 == 0:
+                c.pset(x, y, 0)
+            elif (x % 32, y % 28) in ((2, 2), (29, 2), (2, 25), (29, 25)):
+                c.pset(x, y, 5)
+    wy0, wy1 = 40, 92                                   # 窓
+    c.rect(0, wy0, w, wy1 - wy0, 0)
+    rnd = random.Random(101)
+    for _ in range(70):
+        c.pset(rnd.randrange(w), rnd.randint(wy0 + 1, wy1 - 2), rnd.choice((5, 13, 13, 7)))
+    cx, cy, r = 150, 230, 150                            # 窓の下に見える惑星
+    for y in range(wy0, wy1):
+        for x in range(w):
+            d = math.hypot(x - cx, y - cy)
+            if d <= r:
+                c.pset(x, y, 2 if BAYER[y % 4][x % 4] < (y - (cy - r)) * 0.9 else 8)
+            elif d <= r + 1.5:
+                c.pset(x, y, 14 if False else 8)
+    for x in range(0, w, 64):                           # 窓枠
+        c.rect(x, wy0, 4, wy1 - wy0, 5)
+        c.line(x + 1, wy0, x + 1, wy1 - 1, 13)
+    c.rect(0, wy0 - 3, w, 3, 5)
+    c.line(0, wy0 - 3, w - 1, wy0 - 3, 13)
+    c.rect(0, wy1, w, 3, 5)
+    c.line(0, wy1 + 2, w - 1, wy1 + 2, 0)
+    for x in range(8, w, 32):                           # 赤い誘導灯
+        c.pset(x, wy1 + 8, 2)
+    return c
+
+
+def gen_ship_far():
+    """リアクターの円筒（光るリング）"""
+    lights = LIGHTS["ship_far"] = []
+    w, h = SPEC["ship_far"]
+    c = Canvas(w, h, KEY, wrap=True)
+    for cx, rw, top in ((40, 18, 10), (128, 24, 0), (214, 16, 18)):
+        for y in range(top, h):
+            for x in range(cx - rw, cx + rw + 1):
+                col = 1
+                if BAYER[y % 4][x % 4] < ((x - (cx - rw)) / (2 * rw)) * 12:
+                    col = 0
+                c.pset(x, y, col)
+        c.line(cx - rw, top, cx - rw, h - 1, 5)
+        for ry in range(top + 12, h, 22):               # 光るリング
+            for x in range(cx - rw, cx + rw + 1):
+                c.pset(x, ry, 2)
+                c.pset(x, ry + 1, 8 if (x - cx) % 4 else 14 if False else 8)
+            for x in range(cx - rw + 2, cx + rw, 6):
+                lights.append((x, ry + 1, 8))
+        c.rect(cx - rw - 2, top, 2 * rw + 5, 3, 5)
+    return c
+
+
+def gen_ship_mid():
+    """配管（横・縦のパイプとバルブ）"""
+    lights = LIGHTS["ship_mid"] = []
+    w, h = SPEC["ship_mid"]
+    c = Canvas(w, h, KEY, wrap=True)
+    for py, th in ((18, 5), (30, 3), (62, 4)):
+        c.rect(0, py, w, th, 5)
+        c.line(0, py, w - 1, py, 13)
+        c.line(0, py + th - 1, w - 1, py + th - 1, 1)
+        for x in range(10, w, 40):                      # 継ぎ目
+            c.rect(x, py - 1, 3, th + 2, 13)
+            c.line(x + 2, py - 1, x + 2, py + th, 1)
+    for px in (24, 96, 180):
+        c.rect(px, 0, 4, h, 5)
+        c.line(px, 0, px, h - 1, 13)
+        c.line(px + 3, 0, px + 3, h - 1, 1)
+        c.circ(px + 1, 46, 4, 1)                        # バルブ
+        c.circ(px + 1, 46, 3, 2)
+        c.line(px - 2, 46, px + 4, 46, 13)
+        lights.append((px + 1, 40, 8))
+    for x in range(0, w, 16):                           # 下の暗がり
+        c.rect(x, h - 10, 12, 10, 0)
+    return c
+
+
+def gen_ship_near():
+    """支柱と梁（手前の暗いシルエット）"""
+    w, h = SPEC["ship_near"]
+    c = Canvas(w, h, KEY, wrap=True)
+    for cx in (60, 190):
+        c.rect(cx, 0, 10, h, 0)
+        for y in range(6, h, 14):                       # 肉抜き穴
+            c.rect(cx + 3, y, 4, 7, KEY)
+        c.line(cx, 0, cx - 24, 20, 0)
+        c.line(cx + 9, 0, cx + 33, 20, 0)
+        c.line(cx - 24, 20, cx + 33, 20, 0)
+    for x in range(0, w):                               # 天井近くの梁
+        c.pset(x, 2, 0)
+        c.pset(x, 3, 0)
+        if x % 8 < 2:
+            c.pset(x, 4, 0)
+    return c
+
+
+def gen_ship_front():
+    """床を這うホースと箱（最前面）"""
+    w, h = SPEC["ship_front"]
+    c = Canvas(w, h, KEY, wrap=True)
+    for x in range(w):
+        y = h - 4 + int(2 * math.sin(x / 18))
+        c.pset(x, y, 0)
+        c.pset(x, y + 1, 0)
+    for bx, bw, bh in ((30, 14, 10), (46, 10, 6), (150, 18, 12), (222, 12, 8)):
+        c.rect(bx, h - bh, bw, bh, 0)
+        c.line(bx + 2, h - bh + 2, bx + bw - 3, h - bh + 2, 1)
+    for px in (100, 104):
+        c.rect(px, h - 20, 2, 20, 0)
+    c.line(96, h - 20, 109, h - 20, 0)
+    return c
+
+
+# ============================================================
+# 背景レイヤー：ワールド2（氷の衛星フロスト）
+# ============================================================
+def _aurora(c, cols, y0, amp, seed):
+    w = c.w
+    for x in range(w):
+        base = y0 + amp * math.sin(x / 37 + seed) + amp * 0.6 * math.sin(x / 13 + seed * 2)
+        if (x // 3 + seed) % 5 == 0:
+            continue
+        for k in range(26):
+            y = int(base + k)
+            if 0 <= y < c.h and c.get(x, y) in (0, 1) and BAYER[y % 4][x % 4] < (26 - k) / 26 * 9:
+                c.pset(x, y, cols[0] if k < 4 else cols[1])
+
+
+def gen_ice_sky():
+    """オーロラのかかる夜空と、地平線にかかる巨大な母惑星"""
+    w, h = SPEC["ice_sky"]
+    c = Canvas(w, h, 0)
+    c.grad(0, 40, w, 80, 0, 1, 0.0, 1.0)
+    for y in range(120, h):
+        for x in range(w):
+            c.pset(x, y, 1)
+    c.grad(0, 130, w, h - 130, 1, 5, 0.0, 0.8)
+    rnd = random.Random(111)
+    for _ in range(120):
+        x, y = rnd.randrange(w), rnd.randrange(110)
+        if c.get(x, y) in (0, 1):
+            c.pset(x, y, rnd.choice((13, 13, 6, 7, 5)))
+    _aurora(c, (11, 3), 18, 10, 0.5)
+    cx, cy, r = 206, 58, 30                         # 母惑星（三日月）
+    for y in range(cy - r, cy + r + 1):
+        for x in range(cx - r, cx + r + 1):
+            dx, dy = x - cx, y - cy
+            if dx * dx + dy * dy > r * r:
+                continue
+            shadow = (x - cx - 10) ** 2 + (y - cy - 6) ** 2 < r * r
+            if shadow:
+                c.pset(x, y, 1 if BAYER[y % 4][x % 4] < 8 else 0)
+            else:
+                c.pset(x, y, 9 if (dy // 5) % 2 else 4)
+                if dx * dx + dy * dy > (r - 2) ** 2:
+                    c.pset(x, y, 15)
+    return c
+
+
+def gen_ice_far():
+    """雪をかぶった遠くの山脈"""
+    lights = LIGHTS["ice_far"] = []
+    w, h = SPEC["ice_far"]
+    c = Canvas(w, h, KEY, wrap=True)
+
+    def hgt(x):
+        return (34 + 24 * abs(math.sin(TAU * x / w * 2 + 0.3)) + 12 * abs(math.sin(TAU * x / w * 5 + 1.0))
+                + 4 * math.sin(TAU * x / w * 13))
+    for x in range(w):
+        hx = hgt(x)
+        top = h - int(hx)
+        for y in range(top, h):
+            c.pset(x, y, 5)
+        cap = int(max(0, hx - 30) * 0.45)
+        lit = hgt(x - 1) < hx
+        for y in range(top, top + cap):
+            c.pset(x, y, 7 if lit else 6)
+        c.pset(x, top, 7)
+    c.shade(0, h - 40, w, 40, 1, 0.0, 0.9, only=(5,))
+    for bx in (70, 190):                            # 遠くの前哨基地
+        c.rect(bx - 4, h - 10, 9, 4, 1)
+        lights.append((bx, h - 11, 10))
+    return c
+
+
+def gen_ice_mid():
+    """氷の結晶の尖塔"""
+    lights = LIGHTS["ice_mid"] = []
+    w, h = SPEC["ice_mid"]
+    c = Canvas(w, h, KEY, wrap=True)
+    gy = h - 10
+    c.rect(0, gy, w, 10, 6)
+    c.line(0, gy, w - 1, gy, 7)
+    for cx, hh, ww in ((30, 40, 7), (44, 26, 5), (110, 54, 8), (123, 30, 5), (180, 36, 6), (232, 48, 7)):
+        c.tri(cx - ww, gy, cx, gy - hh, cx + ww, gy, 12)
+        c.tri(cx, gy - hh, cx + ww, gy, cx, gy, 5)
+        c.line(cx - ww, gy, cx, gy - hh, 6)
+        c.line(cx, gy - hh, cx, gy - hh + 6, 7)
+        lights.append((cx, gy - hh, 7))
+    return c
+
+
+def gen_ice_near():
+    """雪の吹きだまりと、壊れた前哨基地"""
+    w, h = SPEC["ice_near"]
+    c = Canvas(w, h, KEY, wrap=True)
+    gy = h - 14
+    for x in range(w):
+        y = gy - int(6 + 5 * math.sin(x / 23) + 3 * math.sin(x / 7))
+        for yy in range(y, h):
+            c.pset(x, yy, 13)
+        c.pset(x, y, 6)
+    c.rect(124, gy - 30, 30, 26, 5)                 # 前哨基地の残骸
+    c.rect(150, gy - 30, 4, 26, 1)
+    c.tri(120, gy - 30, 140, gy - 40, 158, gy - 30, 1)
+    c.line(120, gy - 31, 158, gy - 31, 6)
+    c.rect(130, gy - 22, 6, 6, 0)
+    c.rect(140, gy - 22, 6, 6, 1)
+    c.line(146, gy - 40, 146, gy - 58, 1)
+    c.line(142, gy - 52, 150, gy - 52, 1)
+    for sx in (40, 206):                            # 氷の柱
+        c.rect(sx, gy - 34, 6, 34, 5)
+        c.line(sx, gy - 34, sx, gy, 6)
+        c.tri(sx - 2, gy - 34, sx + 3, gy - 42, sx + 8, gy - 34, 5)
+    return c
+
+
+def gen_ice_front():
+    w, h = SPEC["ice_front"]
+    c = Canvas(w, h, KEY, wrap=True)
+    rnd = random.Random(121)
+    for cx, r in ((14, 12), (98, 9), (170, 13), (236, 8)):
+        for y in range(h - r, h):
+            for x in range(cx - r - 2, cx + r + 3):
+                if (x - cx) ** 2 + ((y - h) * 1.4) ** 2 < r * r + rnd.randint(-3, 4):
+                    c.pset(x, y, 7 if y < h - r + 3 else 6)
+    for px in (60, 130):
+        c.line(px, h - 1, px + 2, h - 20, 5)
+        c.line(px + 2, h - 20, px + 6, h - 16, 5)
+    return c
+
+
+def gen_magma_sky():
+    """溶岩洞の奥の岩壁。下の方が溶岩の光で赤く染まる"""
+    w, h = SPEC["magma_sky"]
+    c = Canvas(w, h, 1)
+    rnd = random.Random(131)
+    for _ in range(40):                              # 岩肌のひび
+        x, y = rnd.randrange(w), rnd.randrange(h - 60)
+        for _ in range(rnd.randint(3, 6)):
+            nx, ny = x + rnd.randint(-6, 6), y + rnd.randint(2, 7)
+            c.line(x, y, nx, ny, 0)
+            x, y = nx, ny
+    for _ in range(300):
+        c.pset(rnd.randrange(w), rnd.randrange(h), rnd.choice((0, 2, 2)))
+    c.grad(0, 110, w, 60, 1, 2, 0.0, 0.7)
+    for y in range(170, h):
+        for x in range(w):
+            c.pset(x, y, 2)
+    c.grad(0, 170, w, h - 170, 2, 8, 0.0, 0.6)
+    c.rect(0, 0, w, 8, 0)
+    x = 0
+    while x < w:                                    # 鍾乳石のシルエット
+        wd = rnd.randint(4, 10)
+        ln = rnd.randint(10, 40)
+        c.tri(x, 0, x + wd, 0, x + wd / 2, ln, 0)
+        c.line(x, 0, x + wd / 2, ln, 1)
+        x += rnd.randint(8, 26)
+    return c
+
+
+def gen_magma_far():
+    """遠くの溶岩の滝と溶岩湖"""
+    lights = LIGHTS["magma_far"] = []
+    w, h = SPEC["magma_far"]
+    c = Canvas(w, h, KEY, wrap=True)
+    for x in range(w):
+        top = int(10 + 8 * math.sin(x / 20) + 4 * math.sin(x / 7))
+        for y in range(top, h):
+            c.pset(x, y, 1 if BAYER[y % 4][x % 4] < 9 else 0)
+    for fx in (40, 120, 200):
+        for y in range(18, h - 20):
+            c.pset(fx, y, 8)
+            c.pset(fx + 1, y, 9)
+            c.pset(fx + 2, y, 10)
+            c.pset(fx + 3, y, 9)
+            c.pset(fx + 4, y, 8)
+            if y % 9 == 0:
+                lights.append((fx + 2, y, 10))
+    c.rect(0, h - 20, w, 20, 8)
+    for x in range(w):
+        c.pset(x, h - 20, 10 if x % 3 else 9)
+    c.shade(0, h - 18, w, 18, 2, 0.1, 0.8, only=(8,))
+    for x in range(4, w, 23):
+        lights.append((x, h - 20, 10))
+    return c
+
+
+def gen_magma_mid():
+    """光る割れ目の入った岩の柱"""
+    lights = LIGHTS["magma_mid"] = []
+    w, h = SPEC["magma_mid"]
+    c = Canvas(w, h, KEY, wrap=True)
+    rnd = random.Random(141)
+    gy = h - 8
+    c.rect(0, gy, w, 8, 1)
+    for cx, ww in ((24, 14), (90, 18), (160, 12), (220, 16)):
+        for y in range(6, gy):
+            half = ww // 2 + int(2 * math.sin(y * 0.15 + cx))
+            for x in range(cx - half, cx + half + 1):
+                c.pset(x, y, 1 if x > cx + half // 3 else 2)
+        x, y = cx, 10
+        while y < gy - 4:                           # 割れ目
+            nx, ny = x + rnd.randint(-3, 3), y + rnd.randint(5, 9)
+            c.line(x, y, nx, ny, 8)
+            lights.append((nx, ny, 9))
+            x, y = nx, ny
+    return c
+
+
+def gen_magma_near():
+    """石筍のシルエット"""
+    w, h = SPEC["magma_near"]
+    c = Canvas(w, h, KEY, wrap=True)
+    gy = h - 12
+    c.rect(0, gy, w, 12, 0)
+    for cx, hh, ww in ((20, 40, 9), (34, 22, 6), (100, 52, 10), (150, 30, 7), (200, 46, 9), (238, 20, 6)):
+        c.tri(cx - ww, gy, cx, gy - hh, cx + ww, gy, 0)
+        c.line(cx - ww, gy, cx, gy - hh, 2)
+    for x in range(w):
+        if x % 5 == 0:
+            c.pset(x, gy, 2)
+    return c
+
+
+def gen_magma_front():
+    w, h = SPEC["magma_front"]
+    c = Canvas(w, h, KEY, wrap=True)
+    rnd = random.Random(151)
+    for cx, r in ((20, 11), (110, 8), (190, 12)):
+        for y in range(h - r, h):
+            for x in range(cx - r - 2, cx + r + 3):
+                if (x - cx) ** 2 + ((y - h) * 1.3) ** 2 < r * r + rnd.randint(-4, 6):
+                    c.pset(x, y, 0)
+        c.line(cx - r, h - 2, cx - r // 2, h - r + 1, 2)
+    return c
+
+
+def gen_fort_sky():
+    """氷の要塞の夜空：紫のオーロラ、小さな月、サーチライト"""
+    w, h = SPEC["fort_sky"]
+    c = Canvas(w, h, 0)
+    c.grad(0, 30, w, 90, 0, 1, 0.0, 1.0)
+    for y in range(120, h):
+        for x in range(w):
+            c.pset(x, y, 1)
+    c.grad(0, 140, w, h - 140, 1, 2, 0.0, 0.6)
+    rnd = random.Random(161)
+    for _ in range(110):
+        x, y = rnd.randrange(w), rnd.randrange(120)
+        if c.get(x, y) in (0, 1):
+            c.pset(x, y, rnd.choice((13, 6, 7, 5)))
+    _aurora(c, (8, 2), 20, 8, 2.0)
+    mx, my, mr = 56, 40, 10
+    for y in range(my - mr, my + mr + 1):
+        for x in range(mx - mr, mx + mr + 1):
+            if (x - mx) ** 2 + (y - my) ** 2 <= mr * mr:
+                c.pset(x, y, 6 if BAYER[y % 4][x % 4] < (x - mx + 4) * 1.5 else 7)
+    for x0, x1, y1 in ((90, 40, 30), (180, 232, 24)):      # サーチライトの光
+        for i in range(-3, 4):
+            for k in range(100):
+                t = k / 99
+                x = x0 + (x1 - x0) * t + i
+                y = h + (y1 - h) * t
+                if c.get(x, y) in (0, 1, 2) and BAYER[int(y) % 4][int(x) % 4] < 4:
+                    c.pset(x, y, 5)
+    return c
+
+
+def gen_fort_far():
+    """遠くの要塞のシルエット"""
+    lights = LIGHTS["fort_far"] = []
+    w, h = SPEC["fort_far"]
+    c = Canvas(w, h, KEY, wrap=True)
+    c.rect(0, h - 24, w, 24, 1)
+    for bx, bw, bh in ((20, 14, 60), (60, 30, 40), (110, 12, 80), (150, 40, 50), (210, 18, 70)):
+        c.rect(bx, h - bh, bw, bh, 1)
+        for x in range(bx, bx + bw, 4):
+            c.rect(x, h - bh - 3, 2, 3, 1)
+        c.line(bx, h - bh, bx + bw - 1, h - bh, 6)
+        for y in range(h - bh + 8, h - 26, 10):
+            for x in range(bx + 3, bx + bw - 2, 6):
+                if (x + y) % 3 == 0:
+                    c.pset(x, y, 10)
+                    lights.append((x, y, 10))
+    c.line(116, h - 80, 116, h - 96, 1)
+    lights.append((116, h - 97, 8))
+    return c
+
+
+def gen_fort_mid():
+    """雪の積もった城壁"""
+    lights = LIGHTS["fort_mid"] = []
+    w, h = SPEC["fort_mid"]
+    c = Canvas(w, h, KEY, wrap=True)
+    c.rect(0, 30, w, h - 30, 5)
+    for y in range(30, h, 8):                       # レンガ
+        c.line(0, y, w - 1, y, 1)
+        for x in range((y // 8 % 2) * 8, w, 16):
+            c.line(x, y, x, y + 7, 1)
+    for x in range(0, w, 12):                       # 胸壁
+        c.rect(x, 22, 7, 8, 5)
+        c.line(x, 22, x + 6, 22, 7)
+    c.line(0, 30, w - 1, 30, 6)
+    for x in range(10, w, 40):                      # 窓
+        c.rect(x, 50, 4, 8, 0)
+        if (x // 40) % 2:
+            c.rect(x + 1, 51, 2, 6, 10)
+            lights.append((x + 1, 53, 10))
+    for bx in (60, 190):                            # 垂れ幕
+        c.rect(bx, 34, 10, 26, 2)
+        c.rect(bx + 2, 36, 6, 20, 8)
+        c.tri(bx, 60, bx + 10, 60, bx + 5, 66, 2)
+    return c
+
+
+def gen_fort_near():
+    """柵と戦車止め"""
+    w, h = SPEC["fort_near"]
+    c = Canvas(w, h, KEY, wrap=True)
+    gy = h - 10
+    c.rect(0, gy, w, 10, 13)
+    c.line(0, gy, w - 1, gy, 6)
+    for x in range(0, w, 20):
+        c.rect(x, gy - 22, 2, 22, 0)
+    for y in (gy - 18, gy - 10):
+        for x in range(w):
+            c.pset(x, y + int(math.sin(x / 3) * 1.2), 0)
+    for tx in (50, 160):                            # 戦車止め
+        c.line(tx - 6, gy, tx + 6, gy - 12, 0)
+        c.line(tx + 6, gy, tx - 6, gy - 12, 0)
+        c.line(tx - 6, gy - 12, tx + 6, gy - 12, 6)
+    return c
+
+
+def gen_fort_front():
+    w, h = SPEC["fort_front"]
+    c = Canvas(w, h, KEY, wrap=True)
+    rnd = random.Random(171)
+    for cx, r in ((30, 11), (140, 13), (220, 9)):
+        for y in range(h - r, h):
+            for x in range(cx - r - 2, cx + r + 3):
+                if (x - cx) ** 2 + ((y - h) * 1.4) ** 2 < r * r + rnd.randint(-3, 4):
+                    c.pset(x, y, 7 if y < h - r + 3 else 6)
+    for x in range(70, 110):
+        c.pset(x, h - 14 + int(math.sin(x / 2.5) * 2), 0)
+    c.rect(70, h - 18, 2, 18, 0)
+    c.rect(108, h - 18, 2, 18, 0)
+    return c
+
+
 GENERATORS = {
     "hero": gen_hero, "tiles": gen_tiles, "sky": gen_sky,
     "far": gen_far, "mid": gen_mid, "near": gen_near, "front": gen_front,
+    "marsh_sky": gen_marsh_sky, "marsh_far": gen_marsh_far, "marsh_mid": gen_marsh_mid,
+    "marsh_near": gen_marsh_near, "marsh_front": gen_marsh_front,
+    "tower_sky": gen_tower_sky, "tower_far": gen_tower_far, "tower_mid": gen_tower_mid,
+    "tower_near": gen_tower_near, "tower_front": gen_tower_front,
+    "ship_sky": gen_ship_sky, "ship_far": gen_ship_far, "ship_mid": gen_ship_mid,
+    "ship_near": gen_ship_near, "ship_front": gen_ship_front,
+    "ice_sky": gen_ice_sky, "ice_far": gen_ice_far, "ice_mid": gen_ice_mid,
+    "ice_near": gen_ice_near, "ice_front": gen_ice_front,
+    "magma_sky": gen_magma_sky, "magma_far": gen_magma_far, "magma_mid": gen_magma_mid,
+    "magma_near": gen_magma_near, "magma_front": gen_magma_front,
+    "fort_sky": gen_fort_sky, "fort_far": gen_fort_far, "fort_mid": gen_fort_mid,
+    "fort_near": gen_fort_near, "fort_front": gen_fort_front,
 }
 
 
